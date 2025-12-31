@@ -1,16 +1,20 @@
-name: Sync Upstream and Build
+name: Sync Upstream Release
 
 on:
   schedule:
-    - cron: '0 4 * * *' # Run daily at 4:00 AM UTC
+    - cron: '0 4 * * *' # Check daily at 4:00 AM UTC
   workflow_dispatch:
 
 jobs:
-  sync:
+  check-and-sync:
     runs-on: ubuntu-latest
     permissions:
       contents: write
       actions: write
+    outputs:
+      new_release: ${{ steps.check.outputs.new_release }}
+      upstream_tag: ${{ steps.check.outputs.upstream_tag }}
+      our_tag: ${{ steps.check.outputs.our_tag }}
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v4
@@ -22,34 +26,76 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
-      - name: Sync with Upstream
-        id: sync
-        run: |
-          git remote add upstream https://github.com/xtls/xray-core.git
-          git fetch upstream
-          
-          # Get current hash
-          BEFORE_SHA=$(git rev-parse HEAD)
-          
-          # Merge upstream/main
-          # Using --no-edit to accept default merge message
-          git merge upstream/main --no-edit
-          
-          # Get new hash
-          AFTER_SHA=$(git rev-parse HEAD)
-          
-          if [ "$BEFORE_SHA" != "$AFTER_SHA" ]; then
-            git push
-            echo "updated=true" >> $GITHUB_OUTPUT
-          else
-            echo "No updates from upstream."
-            echo "updated=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Trigger Build
-        if: steps.sync.outputs.updated == 'true' || github.event_name == 'workflow_dispatch'
+      - name: Check for new upstream release
+        id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Triggering release workflow..."
-          gh workflow run release.yml --ref main
+          # Get latest upstream release tag
+          UPSTREAM_TAG=$(curl -s https://api.github.com/repos/xtls/xray-core/releases/latest | jq -r '.tag_name')
+          echo "Latest upstream release: $UPSTREAM_TAG"
+          
+          if [ -z "$UPSTREAM_TAG" ] || [ "$UPSTREAM_TAG" == "null" ]; then
+            echo "Failed to get upstream release tag"
+            echo "new_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Our corresponding tag
+          OUR_TAG="${UPSTREAM_TAG}-V2"
+          echo "Our tag would be: $OUR_TAG"
+          
+          # Check if we already have this release
+          if git tag -l | grep -q "^${OUR_TAG}$"; then
+            echo "We already have release $OUR_TAG, skipping."
+            echo "new_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "New upstream release detected: $UPSTREAM_TAG"
+            echo "new_release=true" >> $GITHUB_OUTPUT
+            echo "upstream_tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+            echo "our_tag=$OUR_TAG" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sync upstream release
+        if: steps.check.outputs.new_release == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.check.outputs.upstream_tag }}
+          OUR_TAG: ${{ steps.check.outputs.our_tag }}
+        run: |
+          # Add upstream remote
+          git remote add upstream https://github.com/xtls/xray-core.git
+          git fetch upstream --tags
+          
+          # Merge the upstream tag
+          echo "Merging upstream tag $UPSTREAM_TAG..."
+          git merge $UPSTREAM_TAG --no-edit -m "Merge upstream release $UPSTREAM_TAG"
+          
+          # Push changes
+          git push origin main
+          
+          # Create our release tag
+          git tag -a "$OUR_TAG" -m "Release $OUR_TAG (based on upstream $UPSTREAM_TAG with QUIC v2 support)"
+          git push origin "$OUR_TAG"
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.new_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_TAG: ${{ steps.check.outputs.upstream_tag }}
+          OUR_TAG: ${{ steps.check.outputs.our_tag }}
+        run: |
+          gh release create "$OUR_TAG" \
+            --title "$OUR_TAG" \
+            --notes "Based on upstream Xray-core $UPSTREAM_TAG with QUIC v2 sniffing support.
+            
+## Changes from upstream
+- Added QUIC v2 (RFC 9369) sniffing support for services like Disney+, HBO Max, etc.
+
+## Upstream Release
+See: https://github.com/xtls/xray-core/releases/tag/$UPSTREAM_TAG"
+
+  build:
+    needs: check-and-sync
+    if: needs.check-and-sync.outputs.new_release == 'true'
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
