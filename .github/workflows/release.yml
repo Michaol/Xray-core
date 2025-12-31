@@ -39,10 +39,6 @@ jobs:
       - name: Checkout codebase
         uses: actions/checkout@v6
 
-      - name: Set asset name
-        run: |
-          echo "ASSET_NAME=${{ matrix.assetname }}" >> $GITHUB_ENV
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -96,9 +92,9 @@ jobs:
         run: |
           pushd build_assets || exit 1
           touch -mt $(date +%Y01010000) *
-          zip -9vr ../Xray-${{ env.ASSET_NAME }}.zip .
+          zip -9vr ../Xray-${{ matrix.assetname }}.zip .
           popd || exit 1
-          FILE=./Xray-${{ env.ASSET_NAME }}.zip
+          FILE=./Xray-${{ matrix.assetname }}.zip
           DGST=$FILE.dgst
           for METHOD in {"md5","sha1","sha256","sha512"}
           do
@@ -107,20 +103,20 @@ jobs:
 
       - name: Change the name
         run: |
-          mv build_assets Xray-${{ env.ASSET_NAME }}
+          mv build_assets Xray-${{ matrix.assetname }}
 
       - name: Upload files to Artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: Xray-${{ env.ASSET_NAME }}
+          name: Xray-${{ matrix.assetname }}
           path: |
-            ./Xray-${{ env.ASSET_NAME }}/*
+            ./Xray-${{ matrix.assetname }}/*
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         if: github.event_name == 'release'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ./Xray-${{ env.ASSET_NAME }}.zip*
+          file: ./Xray-${{ matrix.assetname }}.zip*
           tag: ${{ github.ref }}
           file_glob: true
