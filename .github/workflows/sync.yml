@@ -2,7 +2,7 @@ name: Sync Upstream Release
 
 on:
   schedule:
-    - cron: '0 4 * * *' # Check daily at 4:00 AM UTC
+    - cron: "0 4 * * *" # Check daily at 4:00 AM UTC
   workflow_dispatch:
 
 jobs:
@@ -34,17 +34,17 @@ jobs:
           # Get latest upstream release tag
           UPSTREAM_TAG=$(curl -s https://api.github.com/repos/xtls/xray-core/releases/latest | jq -r '.tag_name')
           echo "Latest upstream release: $UPSTREAM_TAG"
-          
+
           if [ -z "$UPSTREAM_TAG" ] || [ "$UPSTREAM_TAG" == "null" ]; then
             echo "Failed to get upstream release tag"
             echo "new_release=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           # Our corresponding tag
           OUR_TAG="${UPSTREAM_TAG}-V2"
           echo "Our tag would be: $OUR_TAG"
-          
+
           # Check if we already have this release
           if git tag -l | grep -q "^${OUR_TAG}$"; then
             echo "We already have release $OUR_TAG, skipping."
@@ -65,14 +65,14 @@ jobs:
           # Add upstream remote
           git remote add upstream https://github.com/xtls/xray-core.git
           git fetch upstream --tags
-          
+
           # Merge the upstream tag
           echo "Merging upstream tag $UPSTREAM_TAG..."
           git merge $UPSTREAM_TAG --no-edit -m "Merge upstream release $UPSTREAM_TAG"
-          
+
           # Push changes
           git push origin main
-          
+
           # Create our release tag
           git tag -a "$OUR_TAG" -m "Release $OUR_TAG (based on upstream $UPSTREAM_TAG with QUIC v2 support)"
           git push origin "$OUR_TAG"
@@ -87,10 +87,11 @@ jobs:
           gh release create "$OUR_TAG" \
             --repo ${{ github.repository }} \
             --title "$OUR_TAG" \
-            --notes "Based on upstream Xray-core $UPSTREAM_TAG with QUIC v2 sniffing support.
+            --notes "Based on upstream Xray-core $UPSTREAM_TAG with enhanced QUIC sniffing support.
 
           ## Changes from upstream
-          - Added QUIC v2 (RFC 9369) sniffing support for services like Disney+, HBO Max, etc.
+          - Added QUIC v2 (RFC 9369) sniffing support.
+          - Added support for sniffing fragmented QUIC ClientHello messages (fixing Disney+, HBO Max, etc).
 
           ## Upstream Release
           See: https://github.com/xtls/xray-core/releases/tag/$UPSTREAM_TAG"
