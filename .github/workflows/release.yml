@@ -14,7 +14,6 @@ jobs:
       contents: write
     strategy:
       matrix:
-      matrix:
         include:
           # Linux x86_64 (Servers, x86 Routers)
           - goos: linux
