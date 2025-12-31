@@ -30,19 +30,31 @@ type protocolSnifferWithMetadata struct {
 }
 
 type Sniffer struct {
-	sniffer []protocolSnifferWithMetadata
+	sniffer     []protocolSnifferWithMetadata
+	quicContext *quic.SniffContext // Cross-packet state for QUIC fragment reassembly
 }
 
 func NewSniffer(ctx context.Context) *Sniffer {
 	ret := &Sniffer{
-		sniffer: []protocolSnifferWithMetadata{
-			{func(c context.Context, b []byte) (SniffResult, error) { return http.SniffHTTP(b, c) }, false, net.Network_TCP},
-			{func(c context.Context, b []byte) (SniffResult, error) { return tls.SniffTLS(b) }, false, net.Network_TCP},
-			{func(c context.Context, b []byte) (SniffResult, error) { return bittorrent.SniffBittorrent(b) }, false, net.Network_TCP},
-			{func(c context.Context, b []byte) (SniffResult, error) { return quic.SniffQUIC(b) }, false, net.Network_UDP},
-			{func(c context.Context, b []byte) (SniffResult, error) { return bittorrent.SniffUTP(b) }, false, net.Network_UDP},
-		},
+		sniffer:     nil, // Will be set below
+		quicContext: nil,
 	}
+
+	// Create QUIC sniffer with closure to access ret.quicContext
+	quicSniffer := func(c context.Context, b []byte) (SniffResult, error) {
+		result, newCtx, err := quic.SniffQUIC(b, ret.quicContext)
+		ret.quicContext = newCtx
+		return result, err
+	}
+
+	ret.sniffer = []protocolSnifferWithMetadata{
+		{func(c context.Context, b []byte) (SniffResult, error) { return http.SniffHTTP(b, c) }, false, net.Network_TCP},
+		{func(c context.Context, b []byte) (SniffResult, error) { return tls.SniffTLS(b) }, false, net.Network_TCP},
+		{func(c context.Context, b []byte) (SniffResult, error) { return bittorrent.SniffBittorrent(b) }, false, net.Network_TCP},
+		{quicSniffer, false, net.Network_UDP},
+		{func(c context.Context, b []byte) (SniffResult, error) { return bittorrent.SniffUTP(b) }, false, net.Network_UDP},
+	}
+
 	if sniffer, err := newFakeDNSSniffer(ctx); err == nil {
 		others := ret.sniffer
 		ret.sniffer = append(ret.sniffer, sniffer)

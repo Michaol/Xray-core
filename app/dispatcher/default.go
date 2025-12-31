@@ -407,7 +407,7 @@ func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, netw
 	}
 
 	contentResult, contentErr := func() (SniffResult, error) {
-		cacheDeadline := 200 * time.Millisecond
+		cacheDeadline := 500 * time.Millisecond // Increased for fragmented QUIC ClientHello
 		totalAttempt := 0
 		for {
 			select {
@@ -435,7 +435,7 @@ func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, netw
 				} else {
 					totalAttempt++
 				}
-				if totalAttempt >= 2 || cacheDeadline <= 0 {
+				if totalAttempt >= 5 || cacheDeadline <= 0 { // Increased for fragmented QUIC ClientHello
 					return nil, errSniffingTimeout
 				}
 			}
