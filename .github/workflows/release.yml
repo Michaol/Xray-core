@@ -16,43 +16,29 @@ jobs:
           # Linux x86_64 (Servers, x86 Routers)
           - goos: linux
             goarch: amd64
+            assetname: linux-64
           # Linux ARM64 (R2S, R4S, Raspberry Pi, etc.)
           - goos: linux
             goarch: arm64
+            assetname: linux-arm64-v8a
           # Windows x86_64 (PC)
           - goos: windows
             goarch: amd64
+            assetname: windows-64
       fail-fast: false
 
     runs-on: ubuntu-latest
     env:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
-      GOARM: ${{ matrix.goarm }}
       CGO_ENABLED: 0
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v6
 
-      - name: Set up NDK
-        if: matrix.goos == 'android'
+      - name: Set asset name
         run: |
-          wget -qO android-ndk.zip https://dl.google.com/android/repository/android-ndk-r28b-linux.zip
-          unzip android-ndk.zip
-          rm android-ndk.zip
-          declare -A arches=(
-            ["amd64"]="x86_64-linux-android24-clang"
-            ["arm64"]="aarch64-linux-android24-clang"
-          )
-          echo CC="$(realpath android-ndk-*/toolchains/llvm/prebuilt/linux-x86_64/bin)/${arches[${{ matrix.goarch }}]}" >> $GITHUB_ENV
-          echo CGO_ENABLED=1 >> $GITHUB_ENV
-
-      - name: Show workflow information
-        run: |
-          _NAME=${{ matrix.patch-assetname }}
-          [ -n "$_NAME" ] || _NAME=$(jq ".[\"$GOOS-$GOARCH$GOARM$GOMIPS\"].friendlyName" -r < .github/build/friendly-filenames.json)
-          echo "GOOS: $GOOS, GOARCH: $GOARCH, GOARM: $GOARM, GOMIPS: $GOMIPS, RELEASE_NAME: $_NAME"
-          echo "ASSET_NAME=$_NAME" >> $GITHUB_ENV
+          echo "ASSET_NAME=${{ matrix.assetname }}" >> $GITHUB_ENV
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -72,17 +58,9 @@ jobs:
             go build -o build_assets/xray.exe -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=${COMMID} -s -w -buildid=" -v ./main
             echo 'CreateObject("Wscript.Shell").Run "xray.exe -config config.json",0' > build_assets/xray_no_window.vbs
             echo 'Start-Process -FilePath ".\xray.exe" -ArgumentList "-config .\config.json" -WindowStyle Hidden' > build_assets/xray_no_window.ps1
-            # The line below is for without running conhost.exe version. Commented for not being used. Provided for reference.
-            # go build -o build_assets/wxray.exe -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-H windowsgui -X github.com/xtls/xray-core/core.build=${COMMID} -s -w -buildid=" -v ./main
           else
             echo 'Building Xray...'
-            if [[ ${GOARCH} == 'mips' || ${GOARCH} == 'mipsle' ]]; then
-              go build -o build_assets/xray -trimpath -buildvcs=false -gcflags="-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=${COMMID} -s -w -buildid=" -v ./main
-              echo 'Building soft-float Xray for MIPS/MIPSLE 32-bit...'
-              GOMIPS=softfloat go build -o build_assets/xray_softfloat -trimpath -buildvcs=false -gcflags="-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=${COMMID} -s -w -buildid=" -v ./main
-            else
-              go build -o build_assets/xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=${COMMID} -s -w -buildid=" -v ./main
-            fi
+            go build -o build_assets/xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=${COMMID} -s -w -buildid=" -v ./main
           fi
 
       - name: Restore Geodat Cache
