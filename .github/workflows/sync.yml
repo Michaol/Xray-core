@@ -85,6 +85,7 @@ jobs:
           OUR_TAG: ${{ steps.check.outputs.our_tag }}
         run: |
           gh release create "$OUR_TAG" \
+            --repo ${{ github.repository }} \
             --title "$OUR_TAG" \
             --notes "Based on upstream Xray-core $UPSTREAM_TAG with QUIC v2 sniffing support.
 
